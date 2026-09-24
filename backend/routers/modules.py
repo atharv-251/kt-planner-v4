@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 import smtplib
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -13,9 +13,13 @@ from sqlalchemy.orm import Session
 
 from backend.config import UPLOADS_DIR
 from backend.database import get_db
+from backend.models.knowledge import KnowledgeNode
 from backend.models.scheduling import KTSession
+from backend.models.tracker import KTTrackingActivity
 from backend.models.transition import Transition, UploadedDocument
+from backend.services.schedule_import_service import parse_schedule_csv
 from backend.services.teams_scheduler_service import send_teams_invite, valid_recipients
+from backend.services.transcript_analysis_service import analyze_transcript
 
 router = APIRouter(tags=["KT Planner Modules"])
 
@@ -25,6 +29,14 @@ class TeamsInviteRequest(BaseModel):
     recipients: list[str] | None = Field(default=None, description="Optional test recipients that replace session participants.")
     dry_run: bool = True
     max_invites_per_recipient: int = Field(default=1, ge=1, le=10)
+
+
+class TrackerActivityUpdate(BaseModel):
+    status: str | None = Field(default=None, pattern="^(planned|in_progress|completed|on_hold|cancelled)$")
+    progress_percent: int | None = Field(default=None, ge=0, le=100)
+    blocker: str | None = Field(default=None, max_length=2000)
+    risk: str | None = Field(default=None, max_length=2000)
+    notes: str | None = Field(default=None, max_length=4000)
 
 
 @router.get("/api/v1/modules")
@@ -40,6 +52,39 @@ def get_teams_scheduler(transition_id: str, db: Session = Depends(get_db)) -> di
     _transition_or_404(transition_id, db)
     sessions = _sessions(transition_id, db)
     return {"module": 13, "name": "Teams KT Scheduler", "sessions": [_session_payload(session) for session in sessions]}
+
+
+@router.post("/api/v1/transitions/{transition_id}/teams-kt-scheduler/schedule")
+async def import_teams_schedule(transition_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)) -> dict[str, object]:
+    _transition_or_404(transition_id, db)
+    filename = Path(file.filename or "").name
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=422, detail="Schedule imports must use a CSV file.")
+    content = await file.read()
+    if len(content) > 5_000_000:
+        raise HTTPException(status_code=413, detail="Schedule CSV must be 5 MB or smaller.")
+    try:
+        imported_sessions = parse_schedule_csv(content)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    source_node = KnowledgeNode(transition_id=transition_id, node_type="topic", name="Imported Teams Schedule")
+    db.add(source_node)
+    db.flush()
+    sessions = [KTSession(
+        transition_id=transition_id,
+        node_id=source_node.id,
+        session_title=item["title"],
+        duration_hours=round((datetime.combine(date.min, item["end_time"]) - datetime.combine(date.min, item["start_time"])).seconds / 3600, 2),
+        scheduled_date=item["scheduled_date"],
+        start_time=item["start_time"],
+        end_time=item["end_time"],
+        delivery_mode="workshop",
+        status="proposed",
+        conflict_flags={"source_recipients": item["attendees"], "source": "teams_schedule_csv"},
+    ) for item in imported_sessions]
+    db.add_all(sessions)
+    db.commit()
+    return {"module": 13, "imported": len(sessions), "sessions": [_session_payload(session) for session in sessions]}
 
 
 @router.post("/api/v1/transitions/{transition_id}/teams-kt-scheduler/invites")
@@ -58,7 +103,7 @@ def send_teams_invites(transition_id: str, payload: TeamsInviteRequest, db: Sess
     attempted: dict[str, int] = {}
     results: list[dict[str, str]] = []
     for session in sessions:
-        recipients = override_recipients or valid_recipients([session.sme.email if session.sme else None, session.receiver.email if session.receiver else None])
+        recipients = override_recipients or _session_recipients(session)
         recipients = [email for email in recipients if attempted.get(email, 0) < payload.max_invites_per_recipient]
         if not recipients:
             results.append({"session_id": session.id, "status": "skipped", "message": "Recipient invite limit reached or no recipient email is assigned."})
@@ -97,6 +142,56 @@ async def upload_teams_transcript(transition_id: str, file: UploadFile = File(..
     return {"module": 14, "transcript": _document_payload(document)}
 
 
+@router.get("/api/v1/transitions/{transition_id}/kt-tracker")
+def get_kt_tracker(transition_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    _transition_or_404(transition_id, db)
+    activities = _tracker_activities(transition_id, db)
+    _sync_session_activities(transition_id, activities, db)
+    db.commit()
+    activities = _tracker_activities(transition_id, db)
+    return {"module": 14, "summary": _tracker_summary(activities), "activities": [_activity_payload(activity, db) for activity in activities]}
+
+
+@router.put("/api/v1/transitions/{transition_id}/kt-tracker/activities/{activity_id}")
+def update_tracker_activity(transition_id: str, activity_id: str, payload: TrackerActivityUpdate, db: Session = Depends(get_db)) -> dict[str, object]:
+    _transition_or_404(transition_id, db)
+    activity = db.query(KTTrackingActivity).filter(KTTrackingActivity.id == activity_id, KTTrackingActivity.transition_id == transition_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Tracker activity not found")
+    for field_name, value in payload.model_dump(exclude_unset=True).items():
+        setattr(activity, field_name, value)
+    if activity.status == "completed":
+        activity.progress_percent = 100
+    db.commit()
+    db.refresh(activity)
+    return _activity_payload(activity, db)
+
+
+@router.post("/api/v1/transitions/{transition_id}/kt-tracker/transcripts/{document_id}/analyze")
+def analyze_teams_transcript(transition_id: str, document_id: str, activity_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    _transition_or_404(transition_id, db)
+    document = db.query(UploadedDocument).filter(UploadedDocument.id == document_id, UploadedDocument.transition_id == transition_id).first()
+    activity = db.query(KTTrackingActivity).filter(KTTrackingActivity.id == activity_id, KTTrackingActivity.transition_id == transition_id).first()
+    if not document or not document.file_name.lower().endswith(".vtt"):
+        raise HTTPException(status_code=404, detail="Teams transcript not found")
+    if not activity:
+        raise HTTPException(status_code=404, detail="Tracker activity not found")
+    try:
+        transcript_text = Path(document.file_path).read_text(encoding="utf-8-sig")
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=f"Unable to read transcript: {error}") from error
+    analysis = analyze_transcript(transcript_text, activity.expected_topics or [activity.activity_name])
+    activity.transcript_analysis = analysis
+    if analysis["topics_covered"] and not analysis["topics_partially_covered"] and not analysis["topics_missed"]:
+        activity.status = "completed"
+        activity.progress_percent = 100
+    elif activity.status == "planned":
+        activity.status = "in_progress"
+    db.commit()
+    db.refresh(activity)
+    return {"analysis": analysis, "activity": _activity_payload(activity, db)}
+
+
 def _transition_or_404(transition_id: str, db: Session) -> Transition:
     transition = db.query(Transition).filter(Transition.id == transition_id).first()
     if not transition:
@@ -109,7 +204,12 @@ def _sessions(transition_id: str, db: Session) -> list[KTSession]:
 
 
 def _session_payload(session: KTSession) -> dict[str, object]:
-    return {"id": session.id, "title": session.session_title, "level": session.level, "scheduled_date": session.scheduled_date, "start_time": session.start_time, "end_time": session.end_time, "status": session.status, "recipients": valid_recipients([session.sme.email if session.sme else None, session.receiver.email if session.receiver else None])}
+    return {"id": session.id, "title": session.session_title, "level": session.level, "scheduled_date": session.scheduled_date, "start_time": session.start_time, "end_time": session.end_time, "status": session.status, "recipients": _session_recipients(session)}
+
+
+def _session_recipients(session: KTSession) -> list[str]:
+    source_recipients = session.conflict_flags.get("source_recipients", []) if isinstance(session.conflict_flags, dict) else []
+    return valid_recipients([session.sme.email if session.sme else None, session.receiver.email if session.receiver else None, *source_recipients])
 
 
 def _session_start(session: KTSession, transition: Transition) -> datetime:
@@ -129,3 +229,37 @@ def _timezone(transition: Transition) -> ZoneInfo:
 
 def _document_payload(document: UploadedDocument) -> dict[str, object]:
     return {"id": document.id, "file_name": document.file_name, "file_size": document.file_size, "mime_type": document.mime_type, "uploaded_at": document.uploaded_at}
+
+
+def _tracker_activities(transition_id: str, db: Session) -> list[KTTrackingActivity]:
+    return db.query(KTTrackingActivity).filter(KTTrackingActivity.transition_id == transition_id).order_by(KTTrackingActivity.created_at).all()
+
+
+def _sync_session_activities(transition_id: str, activities: list[KTTrackingActivity], db: Session) -> None:
+    tracked_session_ids = {activity.session_id for activity in activities}
+    for session in _sessions(transition_id, db):
+        if session.id in tracked_session_ids:
+            continue
+        db.add(KTTrackingActivity(
+            transition_id=transition_id,
+            session_id=session.id,
+            activity_name=session.session_title,
+            status="completed" if session.status == "completed" else "planned",
+            progress_percent=100 if session.status == "completed" else 0,
+            expected_topics=[session.session_title],
+        ))
+
+
+def _tracker_summary(activities: list[KTTrackingActivity]) -> dict[str, object]:
+    total = len(activities)
+    completed = sum(activity.status == "completed" for activity in activities)
+    blocked = sum(bool(activity.blocker.strip()) for activity in activities)
+    risks = sum(bool(activity.risk.strip()) for activity in activities)
+    progress = round(sum(activity.progress_percent for activity in activities) / total) if total else 0
+    readiness = "accepted" if total and completed == total else "at_risk" if blocked or risks else "partially_ready" if progress else "not_assessed"
+    return {"total_activities": total, "completed_activities": completed, "progress_percent": progress, "blocked_activities": blocked, "risk_activities": risks, "readiness": readiness}
+
+
+def _activity_payload(activity: KTTrackingActivity, db: Session) -> dict[str, object]:
+    session = db.query(KTSession).filter(KTSession.id == activity.session_id).first()
+    return {"id": activity.id, "session_id": activity.session_id, "activity_name": activity.activity_name, "scheduled_date": session.scheduled_date if session else None, "status": activity.status, "progress_percent": activity.progress_percent, "blocker": activity.blocker, "risk": activity.risk, "notes": activity.notes, "expected_topics": activity.expected_topics or [], "transcript_analysis": activity.transcript_analysis}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarPlus, CheckCircle2, Mail, RefreshCw, Send } from 'lucide-react';
+import { CalendarPlus, CheckCircle2, Mail, RefreshCw, Send, Upload } from 'lucide-react';
 import { api } from '../../api/client';
 
 interface Page13Props {
@@ -10,6 +10,7 @@ export const Page13_TeamsKTScheduler: React.FC<Page13Props> = ({ transition }) =
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState(true);
@@ -49,6 +50,22 @@ export const Page13_TeamsKTScheduler: React.FC<Page13Props> = ({ transition }) =
     }
   };
 
+  const importSchedule = async (file?: File) => {
+    if (!transition || !file) return;
+    setImporting(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await api.importTeamsSchedule(transition.id, file);
+      setMessage(`${result.imported} schedule session${result.imported === 1 ? '' : 's'} imported with source attendees.`);
+      await loadSessions();
+    } catch (requestError: any) {
+      setError(requestError.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
@@ -61,6 +78,11 @@ export const Page13_TeamsKTScheduler: React.FC<Page13Props> = ({ transition }) =
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <label className="cursor-pointer px-3 py-2 border border-violet-200 text-violet-700 hover:bg-violet-50 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+              <Upload className={`h-3.5 w-3.5 ${importing ? 'animate-pulse' : ''}`} />
+              {importing ? 'Importing...' : 'Import CSV'}
+              <input type="file" accept=".csv,text/csv" className="hidden" disabled={importing} onChange={(event) => { void importSchedule(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+            </label>
             <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
               <input type="checkbox" checked={dryRun} onChange={(event) => setDryRun(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-violet-600" />
               Dry run

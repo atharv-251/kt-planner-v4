@@ -2,6 +2,7 @@ from backend.models.transition import Transition, UploadedDocument, RawExtractio
 from backend.models.knowledge import KnowledgeNode, KTLevelEvaluation
 from backend.models.stakeholder import Stakeholder, StakeholderLeave, CalendarEvent
 from backend.models.scheduling import KTSession
+from backend.models.tracker import KTTrackingActivity
 from backend.models.governance import PlanPatch, AuditLog, TransitionApproval
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "StakeholderLeave",
     "CalendarEvent",
     "KTSession",
+    "KTTrackingActivity",
     "PlanPatch",
     "AuditLog",
     "TransitionApproval",

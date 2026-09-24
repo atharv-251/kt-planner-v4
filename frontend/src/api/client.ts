@@ -91,6 +91,11 @@ export const api = {
 
   // Teams KT Scheduler
   getTeamsKTScheduler: (id: string) => request<any>(`/transitions/${id}/teams-kt-scheduler`),
+  importTeamsSchedule: (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request<any>(`/transitions/${id}/teams-kt-scheduler/schedule`, { method: 'POST', body: fd });
+  },
   sendTeamsInvites: (id: string, payload: any) => request<any>(`/transitions/${id}/teams-kt-scheduler/invites`, { method: 'POST', body: JSON.stringify(payload) }),
 
   // KT Tracker
@@ -100,6 +105,9 @@ export const api = {
     fd.append('file', file);
     return request<any>(`/transitions/${id}/kt-tracker/transcripts`, { method: 'POST', body: fd });
   },
+  getKTTracker: (id: string) => request<any>(`/transitions/${id}/kt-tracker`),
+  updateKTTrackerActivity: (id: string, activityId: string, payload: any) => request<any>(`/transitions/${id}/kt-tracker/activities/${activityId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  analyzeTeamsTranscript: (id: string, documentId: string, activityId: string) => request<any>(`/transitions/${id}/kt-tracker/transcripts/${documentId}/analyze?activity_id=${encodeURIComponent(activityId)}`, { method: 'POST' }),
 
   // Controlled SQL Gateway
   querySQL: (query: string, params: any = {}) => request<any>('/database/query', { method: 'POST', body: JSON.stringify({ query, params }) }),

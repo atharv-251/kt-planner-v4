@@ -48,6 +48,19 @@ def test_teams_scheduler_and_tracker_modules():
         assert scheduler_session["id"] == session.id
         assert scheduler_session["recipients"] == ["sme@example.com", "receiver@example.com"]
 
+        invalid_schedule = client.post(
+            f"/api/v1/transitions/{transition.id}/teams-kt-scheduler/schedule",
+            files={"file": ("schedule.txt", b"not csv", "text/plain")},
+        )
+        assert invalid_schedule.status_code == 422
+        schedule_import = client.post(
+            f"/api/v1/transitions/{transition.id}/teams-kt-scheduler/schedule",
+            files={"file": ("teams-schedule.csv", b"Title,Date,Start,End,Required Attendees\nImported Teams Session,2026-09-29,13:00,14:00,source@example.com;other@example.com\n", "text/csv")},
+        )
+        assert schedule_import.status_code == 200
+        assert schedule_import.json()["imported"] == 1
+        assert schedule_import.json()["sessions"][0]["recipients"] == ["source@example.com", "other@example.com"]
+
         invite_response = client.post(
             f"/api/v1/transitions/{transition.id}/teams-kt-scheduler/invites",
             json={"session_ids": [session.id], "dry_run": True},
@@ -72,9 +85,33 @@ def test_teams_scheduler_and_tracker_modules():
         assert upload_response.status_code == 200
         assert upload_response.json()["transcript"]["file_name"] == "meeting.vtt"
 
+        tracker_dashboard = client.get(f"/api/v1/transitions/{transition.id}/kt-tracker")
+        assert tracker_dashboard.status_code == 200
+        activities = tracker_dashboard.json()["activities"]
+        assert len(activities) == 2
+        test_activity = next(activity for activity in activities if activity["session_id"] == session.id)
+        update_activity = client.put(
+            f"/api/v1/transitions/{transition.id}/kt-tracker/activities/{test_activity['id']}",
+            json={"progress_percent": 40, "blocker": "Awaiting environment access"},
+        )
+        assert update_activity.status_code == 200
+        assert update_activity.json()["blocker"] == "Awaiting environment access"
+
+        substantive_transcript = client.post(
+            f"/api/v1/transitions/{transition.id}/kt-tracker/transcripts",
+            files={"file": ("covered.vtt", b"WEBVTT\n\n00:00:00.000 --> 00:00:20.000\nTeams Scheduler Test Session was covered thoroughly with configuration details, demonstrations, ownership decisions, review steps, validation notes, and documented follow up actions.\n", "text/vtt")},
+        )
+        assert substantive_transcript.status_code == 200
+        analysis_response = client.post(
+            f"/api/v1/transitions/{transition.id}/kt-tracker/transcripts/{substantive_transcript.json()['transcript']['id']}/analyze?activity_id={test_activity['id']}"
+        )
+        assert analysis_response.status_code == 200
+        assert analysis_response.json()["analysis"]["topics_covered"] == ["Teams Scheduler Test Session"]
+        assert analysis_response.json()["activity"]["status"] == "completed"
+
         transcripts_response = client.get(f"/api/v1/transitions/{transition.id}/kt-tracker/transcripts")
         assert transcripts_response.status_code == 200
-        assert [document["file_name"] for document in transcripts_response.json()["transcripts"]] == ["meeting.vtt"]
+        assert {document["file_name"] for document in transcripts_response.json()["transcripts"]} == {"meeting.vtt", "covered.vtt"}
     finally:
         db.query(Transition).filter(Transition.id == transition.id).delete()
         db.commit()
