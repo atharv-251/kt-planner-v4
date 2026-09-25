@@ -1,5 +1,37 @@
 const API_BASE = '/api/v1';
 
+export interface AnalyticsSession {
+  id: string; title: string; date: string; domain: string; level: string; mode: string;
+  sme: string; receiver: string; status: string; progress: number; hours: number;
+  blocker: string; risk: string; accepted: boolean; readiness: string; tracked: boolean;
+  actual_hours: number; invited: boolean; overdue: boolean; transcript_ids: string[];
+}
+
+export interface AnalyticsFinding {
+  id: string; kind: string; severity: string; title: string; detail: string; action: string;
+  source: string; step: number; owner: string; certainty: string; session_ids: string[];
+  document?: string; analyzed_at?: string; next_call_question?: string;
+  evidence: { text: string; speaker: string; start: string; end: string }[];
+}
+
+export interface AnalyticsSnapshot {
+  generated_at: string; as_of: string;
+  transition: { id: string; name: string; status: string; timezone: string };
+  metrics: {
+    total: number; completed: number; completion_percent: number | null; planned_hours: number;
+    earned_hours: number; actual_hours: number; accepted: number; blocked: number; overdue: number;
+    conflicts: number; invited: number; evidenced: number; untracked: number; risk_findings: number;
+    shadowing: number; reverse_shadowing: number; health: string;
+  };
+  sessions: AnalyticsSession[]; findings: AnalyticsFinding[]; project_findings: AnalyticsFinding[];
+  domains: { name: string; planned: number; earned: number; completion: number | null }[];
+  timeline: { date: string; planned: number; earned: number; completed: number }[];
+  status_distribution: { name: string; value: number }[];
+  stages: { step: number; name: string; detail: string; ready: boolean }[];
+  capacity: { target_capacity_hours: number; generated_hours: number; gap_hours: number; status: string; recommendation: string };
+  options: { domains: string[]; levels: string[]; statuses: string[]; smes: { id: string; name: string }[]; receivers: { id: string; name: string }[] };
+}
+
 export async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   const headers = new Headers(options.headers || {});
@@ -23,6 +55,10 @@ export async function request<T>(endpoint: string, options: RequestInit = {}): P
 }
 
 export const api = {
+  getAnalytics: (id: string, filters: Record<string, string>, signal?: AbortSignal) => {
+    const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
+    return request<AnalyticsSnapshot>(`/transitions/${id}/analytics?${params}`, { signal });
+  },
   // Transitions
   listTransitions: () => request<any[]>('/transitions'),
   getTransition: (id: string) => request<any>(`/transitions/${id}`),

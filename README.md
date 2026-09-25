@@ -107,6 +107,34 @@ AI endpoint: `POST /api/v1/transitions/{id}/kt-tracker/transcripts/{document_id}
 (`?refresh=true` for regeneration). The additive `kt_transcript_assessments` table
 is created by the application's existing startup schema initialization.
 
+### Tab 15: Executive Dashboard / Analytics
+
+The read-only dashboard combines the preceding 14 stages for the selected transition.
+Date range (scheduled dates, inclusive), domain, KT level, SME, receiver, and activity
+status filters apply to delivery metrics, charts, session-linked findings, and CSV export.
+The risk register also supports severity, source, and text search. Transition-wide
+readiness, capacity, profile risks, validation checks, and unlinked AI assessments
+are explicitly outside those delivery filters. Source links open the owning tab.
+
+- Completion is `sum(planned hours * recorded progress / 100) / sum(planned hours)`.
+   Cancelled sessions are excluded; no scheduled hours means N/A, not zero or complete.
+   Sessions without tracker records use their schedule completion status, otherwise zero progress.
+- Completed session count, actual hours, and explicit final acceptance are separate measures.
+   Transcript links and invitation records do not prove attendance, delivery, or acceptance.
+- The delivery chart is current progress grouped by scheduled date, not historical velocity.
+   Overdue means an unfinished activity before today's date in the transition timezone.
+- Blockers are recorded tracker text or an on-hold status. Other signals include recorded
+   risks, overdue activities, missing participants, and saved scheduling conflicts.
+   Import/Graph metadata is not itself a conflict. Validation checks are rule-based,
+   not a fresh calendar availability computation.
+- Saved AI findings are advisory, may be stale, and are counted once per transcript finding
+   even when linked to multiple sessions. Signals from different sources may overlap.
+   Mitigations are proposals, not agreed actions; no new AI call or status mutation occurs.
+
+API: `GET /api/v1/transitions/{id}/analytics`, with optional `start_date`, `end_date`,
+`domain`, `level`, `sme_id`, `receiver_id`, and `status` query parameters.
+Verification: `python -m pytest tests/test_analytics.py -q` and the frontend build.
+
 ### Platform Requirements
 
 - [x] **Single Source of Truth**: SQLite database (`kt_planner.db`) holds all projects, hierarchy, evaluations, and schedules.

@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Upload, FileText, Settings, Users, Network, Award,
-  Scale, ListOrdered, CalendarCheck, CalendarDays, ShieldCheck, DownloadCloud, CalendarPlus, ClipboardList
+  Scale, ListOrdered, CalendarCheck, CalendarDays, ShieldCheck, DownloadCloud, CalendarPlus, ClipboardList, ChartNoAxesCombined
 } from 'lucide-react';
 
 export interface StepItem {
@@ -25,6 +25,7 @@ export const STEPS: StepItem[] = [
   { id: 12, label: 'Deliverables', icon: <DownloadCloud className="h-4 w-4" /> },
   { id: 13, label: 'Teams Scheduler', icon: <CalendarPlus className="h-4 w-4" /> },
   { id: 14, label: 'KT Tracker', icon: <ClipboardList className="h-4 w-4" /> },
+  { id: 15, label: 'Dashboard / Analytics', icon: <ChartNoAxesCombined className="h-4 w-4" /> },
 ];
 
 interface StepperProps {
@@ -33,7 +34,7 @@ interface StepperProps {
   maxStepUnlocked?: number;
 }
 
-export const Stepper: React.FC<StepperProps> = ({ currentStep, onSelectStep, maxStepUnlocked = 14 }) => {
+export const Stepper: React.FC<StepperProps> = ({ currentStep, onSelectStep, maxStepUnlocked = 15 }) => {
   return (
     <div className="bg-white border-b border-slate-200 shadow-sm sticky top-16 z-40">
       <div className="max-w-7xl mx-auto px-4 overflow-x-auto py-2.5">

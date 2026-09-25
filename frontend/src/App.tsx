@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Stepper } from './components/Stepper';
 import { Page1_FileUpload } from './components/pages/Page1_FileUpload';
@@ -17,6 +17,8 @@ import { Page13_TeamsKTScheduler } from './components/pages/Page13_TeamsKTSchedu
 import { Page14_KTTracker } from './components/pages/Page14_KTTracker';
 import { PlusCircle, Layers } from 'lucide-react';
 import { api } from './api/client';
+
+const Page15_Analytics = lazy(() => import('./components/pages/Page15_Analytics').then((module) => ({ default: module.Page15_Analytics })));
 
 export function App() {
   const [transitions, setTransitions] = useState<any[]>([]);
@@ -119,6 +121,8 @@ export function App() {
         return <Page13_TeamsKTScheduler transition={activeTransition} />;
       case 14:
         return <Page14_KTTracker transition={activeTransition} />;
+      case 15:
+        return <Suspense fallback={<p role="status">Loading analytics...</p>}><Page15_Analytics key={activeTransition.id} transition={activeTransition} onNavigate={setCurrentStep} /></Suspense>;
       default:
         return null;
     }
@@ -135,16 +139,16 @@ export function App() {
 
       {/* Transition Selector Bar */}
       <div className="bg-slate-800 text-slate-300 px-4 py-2 border-b border-slate-700 text-xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="text-slate-400">Select Transition:</span>
+        <div className="max-w-7xl mx-auto flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex min-w-0 max-w-full items-center space-x-2">
+            <span className="text-slate-400 shrink-0">Select Transition:</span>
             <select
               value={activeTransition?.id || ''}
               onChange={(e) => {
                 const sel = transitions.find((t) => t.id === e.target.value);
                 if (sel) setActiveTransition(sel);
               }}
-              className="bg-slate-700 text-white text-xs rounded px-2 py-1 border border-slate-600 focus:outline-none"
+              className="min-w-0 bg-slate-700 text-white text-xs rounded px-2 py-1 border border-slate-600 focus:outline-none"
             >
               {transitions.map((t) => (
                 <option key={t.id} value={t.id}>

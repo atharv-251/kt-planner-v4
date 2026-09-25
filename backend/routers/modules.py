@@ -28,6 +28,22 @@ from backend.services.transcript_analysis_service import analyze_transcript, ext
 router = APIRouter(tags=["KT Planner Modules"])
 
 
+@router.get('/api/v1/transitions/{transition_id}/analytics')
+def get_transition_analytics(
+    transition_id: str, start_date: date | None = None, end_date: date | None = None,
+    domain: str | None = None, level: str | None = None, sme_id: str | None = None,
+    receiver_id: str | None = None, status: str | None = None, db: Session = Depends(get_db),
+) -> dict:
+    from backend.services.analytics_service import build_analytics
+    transition = _transition_or_404(transition_id, db)
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=422, detail='Start date must be on or before end date.')
+    return build_analytics(db, transition, {
+        'start_date': start_date, 'end_date': end_date, 'domain': domain,
+        'level': level, 'sme_id': sme_id, 'receiver_id': receiver_id, 'status': status,
+    })
+
+
 class TeamsInviteRequest(BaseModel):
     session_ids: list[str] | None = None
     recipients: list[str] | None = Field(default=None, description="Optional test recipients that replace session participants.")

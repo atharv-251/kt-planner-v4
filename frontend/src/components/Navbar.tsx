@@ -19,11 +19,11 @@ export const Navbar: React.FC<NavbarProps> = ({ transition, currentStep, onRefre
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-bold text-lg tracking-tight">KT PLANNER</span>
-              <span className="text-xs uppercase bg-sky-500/20 text-sky-300 font-semibold px-2 py-0.5 rounded border border-sky-500/30">
+              <span className="hidden sm:inline text-xs uppercase bg-sky-500/20 text-sky-300 font-semibold px-2 py-0.5 rounded border border-sky-500/30">
                 Enterprise v4
               </span>
             </div>
-            <p className="text-xs text-slate-400">AI Transition Planning & Orchestration Platform</p>
+            <p className="hidden sm:block text-xs text-slate-400">AI Transition Planning & Orchestration Platform</p>
           </div>
         </div>
 
@@ -34,14 +34,14 @@ export const Navbar: React.FC<NavbarProps> = ({ transition, currentStep, onRefre
               <span className="font-semibold text-white max-w-[180px] truncate">{transition.name}</span>
             </div>
 
-            <div className="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+            <div className="hidden lg:flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
               <Calendar className="h-3.5 w-3.5 text-sky-400" />
               <span className="text-slate-300">{transition.available_kt_days} KT Days</span>
               <span className="text-slate-500">|</span>
               <span className="text-sky-400 font-medium">{transition.target_capacity_hours}h Target</span>
             </div>
 
-            <div className="flex items-center space-x-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+            <div className="hidden sm:flex items-center space-x-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span className="font-medium capitalize text-emerald-300">{transition.status.replace(/_/g, ' ')}</span>
             </div>
