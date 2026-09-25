@@ -62,6 +62,53 @@ python -m pytest tests/ -v
 
 ## Compliance With Blueprint Requirements
 
+### Tab 14: Transcript-First KT Tracking
+
+Choose the meeting date and a Teams `.vtt` file, then select **Read transcript**.
+Previously uploaded transcripts can also be reviewed without uploading again.
+The review extracts speakers, the timestamp span, discussion highlights, questions,
+follow-up statements, potential concerns, and document mentions locally.
+Evidence excerpts include the speaker and the containing speaker-turn time range.
+
+Review the suggested activities and select **Confirm meeting**. Only activities
+scheduled for the selected day are checked by default; additional keyword matches
+are suggestions, not proof of coverage. Confirmation links the evidence to the
+selected activities and changes planned activities to in progress. Reconfirming
+the same transcript replaces its activity links without duplicating the meeting.
+Other statuses, manual records, and final acceptance remain unchanged.
+
+The **Meetings** view retains reviewed evidence; **Activities** provides search,
+status filters, and optional corrections/sign-off. Extraction is deterministic,
+not an LLM assessment: speakers are not a full attendance list, transcript duration
+is not verified working time, questions may already be answered, and document
+mentions do not prove delivery. VTT relative timestamps do not establish a calendar
+date, so the meeting date is supplied by the reviewer.
+
+Review API: `GET /api/v1/transitions/{id}/kt-tracker/transcripts/{document_id}/review?meeting_date=YYYY-MM-DD`.
+Confirm using `POST` to the same path with `meeting_date` and `activity_ids`.
+
+**AI follow-up analysis:** Select **AI analysis** in a transcript review or an
+expanded saved meeting. The configured Agentic Blueprint LLM reviews the full
+cleaned transcript for unresolved issues and risks, including later answers,
+and proposes questions/actions for the next call. Findings include priority,
+resolution uncertainty, and source quotes/timestamps. Human review is required;
+the assessment does not change progress or acceptance. Successful results are
+stored per transcript; **Run again** refreshes them. Provider failures retain any
+previous result and do not fall back to fabricated AI output.
+
+This action requires a valid `LLMAAS_API_KEY` and connectivity to the configured
+LLM provider. Replace local setup credentials in the environment configuration
+and restart the server; never share credentials in chat. Only clicking the action
+sends transcript speech and speaker labels to that provider. The existing
+**Read transcript** extraction remains local. Full transcripts above the analysis
+size limit are rejected rather than silently truncated.
+
+AI endpoint: `POST /api/v1/transitions/{id}/kt-tracker/transcripts/{document_id}/ai-analysis`
+(`?refresh=true` for regeneration). The additive `kt_transcript_assessments` table
+is created by the application's existing startup schema initialization.
+
+### Platform Requirements
+
 - [x] **Single Source of Truth**: SQLite database (`kt_planner.db`) holds all projects, hierarchy, evaluations, and schedules.
 - [x] **Holidays Management**: Strictly driven by `holidays.json`. Zero hardcoding in Python.
 - [x] **Capacity Mathematics**: Available KT Days = Duration - Shadow - Reverse Shadow; 100% capacity balance required.

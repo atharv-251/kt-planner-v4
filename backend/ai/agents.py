@@ -32,16 +32,20 @@ class ProjectProfileAgent:
         proj_name = raw.get("project_name", "Application KT Transition")
         purpose = primary_app.get("business_purpose", "Supports business workflows with operational SLA commitments.")
         criticality = primary_app.get("criticality", "Business-critical with defined SLAs.")
-        tech_stack = inputs.get("technology_stack", ["Java 17 / Spring Boot", "Azure Cloud Services", "Azure Key Vault"])
-        environments = inputs.get("environments", ["Azure Dev/Test", "Azure UAT", "Azure Production"])
-        support_model = "; ".join(inputs.get("support_model", ["AMS 2 Application Group"]))
-        integrations = inputs.get("integrations", ["REST APIs with OAuth2", "Azure Blob File Storage"])
-        dependencies = inputs.get("dependencies", ["Azure Database Connectivity", "External Auth Provider"])
-        kpis_slas = inputs.get("kpis_slas", ["Response: P1 < 15m, Resolution < 4h", "Availability 99.9%"])
-        risks = inputs.get("risks", ["Security credentials rotation", "DR failover validation"])
+        tech_stack = inputs.get("technology_stack") or raw.get("technology_stack") or ["Not identified in extracted evidence"]
+        environments = inputs.get("environments") or raw.get("environments") or ["Not identified in extracted evidence"]
+        support_values = inputs.get("support_model") or raw.get("support_model") or ["Not identified in extracted evidence"]
+        support_model = "; ".join(support_values) if isinstance(support_values, list) else str(support_values)
+        integrations = inputs.get("integrations") or raw.get("integrations") or ["Not identified in extracted evidence"]
+        dependencies = inputs.get("dependencies") or raw.get("dependencies") or ["Not identified in extracted evidence"]
+        kpis_slas = inputs.get("kpis_slas") or raw.get("kpis_slas") or ["Not identified in extracted evidence"]
+        risks = inputs.get("risks") or raw.get("risks") or ["Not identified in extracted evidence"]
         evidence_gaps = raw.get("evidence_gaps", [])
 
-        evidence_citations = [f"{raw.get('source_files', ['Workbook.xlsx'])[0]} :: Worksheet: Topics"]
+        source_files = raw.get("source_files") or []
+        evidence_citations = [f"{source_file} :: Extracted document content" for source_file in source_files]
+        if not evidence_citations:
+            evidence_citations = ["Extracted payload :: source file metadata unavailable"]
 
         # Extract project_category from external API response (raw extraction)
         raw_cat = raw.get("project_category", "development_and_ams")

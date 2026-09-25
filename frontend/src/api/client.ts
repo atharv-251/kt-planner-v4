@@ -10,11 +10,12 @@ export async function request<T>(endpoint: string, options: RequestInit = {}): P
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     let errorDetail = 'API request failed';
+    const errorBody = await res.text();
     try {
-      const errJson = await res.json();
+      const errJson = JSON.parse(errorBody);
       errorDetail = errJson.detail || JSON.stringify(errJson);
     } catch {
-      errorDetail = await res.text();
+      errorDetail = errorBody || errorDetail;
     }
     throw new Error(errorDetail);
   }
@@ -100,12 +101,22 @@ export const api = {
 
   // KT Tracker
   getTeamsTranscripts: (id: string) => request<any>(`/transitions/${id}/kt-tracker/transcripts`),
-  uploadTeamsTranscript: (id: string, file: File) => {
+  uploadTeamsTranscript: (id: string, file: File, activityId?: string) => {
     const fd = new FormData();
     fd.append('file', file);
+    if (activityId) fd.append('activity_id', activityId);
     return request<any>(`/transitions/${id}/kt-tracker/transcripts`, { method: 'POST', body: fd });
   },
   getKTTracker: (id: string) => request<any>(`/transitions/${id}/kt-tracker`),
+  reviewKTMeeting: (id: string, documentId: string, meetingDate: string) => request<any>(`/transitions/${id}/kt-tracker/transcripts/${documentId}/review?meeting_date=${encodeURIComponent(meetingDate)}`),
+  analyzeKTMeetingFollowups: (id: string, documentId: string, refresh = false) => request<any>(`/transitions/${id}/kt-tracker/transcripts/${documentId}/ai-analysis?refresh=${refresh}`, { method: 'POST' }),
+  confirmKTMeeting: (id: string, documentId: string, meetingDate: string, activityIds: string[]) => request<any>(`/transitions/${id}/kt-tracker/transcripts/${documentId}/review`, {
+    method: 'POST', body: JSON.stringify({ meeting_date: meetingDate, activity_ids: activityIds }),
+  }),
+  syncKTTrackerDemo: (id: string, transcriptId?: string) => request<any>(`/transitions/${id}/kt-tracker/sync-demo`, {
+    method: 'POST',
+    body: JSON.stringify({ transcript_id: transcriptId || null }),
+  }),
   updateKTTrackerActivity: (id: string, activityId: string, payload: any) => request<any>(`/transitions/${id}/kt-tracker/activities/${activityId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   analyzeTeamsTranscript: (id: string, documentId: string, activityId: string) => request<any>(`/transitions/${id}/kt-tracker/transcripts/${documentId}/analyze?activity_id=${encodeURIComponent(activityId)}`, { method: 'POST' }),
 

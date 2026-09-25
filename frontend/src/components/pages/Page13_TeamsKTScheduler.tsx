@@ -13,7 +13,7 @@ export const Page13_TeamsKTScheduler: React.FC<Page13Props> = ({ transition }) =
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dryRun, setDryRun] = useState(true);
+  const [dryRun, setDryRun] = useState(false);
 
   const loadSessions = async () => {
     if (!transition) return;
@@ -42,7 +42,7 @@ export const Page13_TeamsKTScheduler: React.FC<Page13Props> = ({ transition }) =
       const result = await api.sendTeamsInvites(transition.id, { dry_run: dryRun });
       setMessage(dryRun
         ? `${result.dry_run_count} invitation${result.dry_run_count === 1 ? '' : 's'} generated for review.`
-        : `${result.sent} invitation${result.sent === 1 ? '' : 's'} sent; ${result.skipped} skipped.`);
+        : `${result.sent} invitation${result.sent === 1 ? '' : 's'} sent; ${result.skipped} skipped; ${result.failed} failed.`);
     } catch (requestError: any) {
       setError(requestError.message);
     } finally {

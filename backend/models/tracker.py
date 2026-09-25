@@ -26,3 +26,12 @@ class KTTrackingActivity(Base):
     transcript_analysis = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class KTTranscriptAssessment(Base):
+    __tablename__ = "kt_transcript_assessments"
+
+    document_id = Column(String(36), ForeignKey("uploaded_documents.id", ondelete="CASCADE"), primary_key=True)
+    transition_id = Column(String(36), ForeignKey("transitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    result = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

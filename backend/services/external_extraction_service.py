@@ -2,8 +2,14 @@ import os
 import ssl
 import time
 import logging
+import json
+import re
+import zipfile
+from html import unescape
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
+from xml.etree import ElementTree
 import requests
 import urllib3
 from urllib3.util.retry import Retry
@@ -13,6 +19,143 @@ from backend.models.transition import UploadedDocument
 
 logger = logging.getLogger("kt_planner.external_extraction")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def _clean_text(value: str) -> str:
+    return re.sub(r"\s+", " ", unescape(value)).strip()
+
+
+def _application_name(file_name: str) -> str:
+    name = Path(file_name).stem
+    name = re.sub(r"^BRD\s*[-_:]*\s*", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"^SAVWIPL\s*[-_:]*\s*", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\s+v(?:ersion)?\.?\s*\d+(?:\.\d+)*$", "", name, flags=re.IGNORECASE)
+    return _clean_text(name) or "Uploaded Application"
+
+
+def _docx_paragraphs(path: str) -> List[tuple[str, str]]:
+    namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    with zipfile.ZipFile(path) as archive:
+        root = ElementTree.fromstring(archive.read("word/document.xml"))
+
+    paragraphs = []
+    for paragraph in root.iter(namespace + "p"):
+        text = _clean_text("".join(node.text or "" for node in paragraph.iter(namespace + "t")))
+        if not text:
+            continue
+        style = paragraph.find(namespace + "pPr/" + namespace + "pStyle")
+        style_name = style.attrib.get(namespace + "val", "") if style is not None else ""
+        paragraphs.append((text, style_name))
+    return paragraphs
+
+
+def _local_docx_payload(doc: UploadedDocument) -> Dict[str, Any]:
+    paragraphs = _docx_paragraphs(doc.file_path)
+    document_text = " ".join(text for text, _ in paragraphs)
+    topics = []
+    for text, style in paragraphs:
+        is_heading = style.lower().startswith("heading") or re.match(r"^\d+(?:\.\d+)*\s+", text)
+        if is_heading and len(text) >= 8 and text.lower() not in {"introduction", "references"}:
+            topic = re.sub(r"^\d+(?:\.\d+)*\s+", "", text).strip(" .")
+            if topic and topic not in topics:
+                topics.append(topic[:255])
+
+    if not topics:
+        topics = [text[:255] for text, _ in paragraphs if len(text) >= 20][:20]
+
+    technology_stack = []
+    for pattern, label in [
+        (r"\bAWS\b|Amazon Web Services", "AWS (Amazon Web Services)"),
+        (r"\bPower BI\b", "Microsoft Power BI"),
+        (r"\bSQL\b|data warehouse", "SQL and data warehouse"),
+        (r"\bETL\b|semantic layer", "ETL and semantic layer"),
+    ]:
+        if re.search(pattern, document_text, flags=re.IGNORECASE):
+            technology_stack.append(label)
+
+    return {
+        "project_name": _application_name(doc.file_name),
+        "project_category": "development_and_ams",
+        "source_files": [doc.file_name],
+        "technology_stack": technology_stack,
+        "applications": [{
+            "application_name": _application_name(doc.file_name),
+            "business_purpose": next((text for text, _ in paragraphs if "objective" in text.lower() and len(text) > 30), ""),
+            "topics": [{"topic": topic} for topic in topics],
+        }],
+        "extraction_source": "local_document_parser",
+    }
+
+
+def _local_json_payload(doc: UploadedDocument) -> Dict[str, Any]:
+    with open(doc.file_path, "r", encoding="utf-8") as source:
+        payload = json.load(source)
+    if not isinstance(payload, dict):
+        raise ValueError("JSON document must contain an object at the root")
+    payload.setdefault("extraction_source", "local_document_parser")
+    payload.setdefault("source_files", [doc.file_name])
+    return payload
+
+
+def _local_xlsx_payload(doc: UploadedDocument) -> Dict[str, Any]:
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(doc.file_path, read_only=True, data_only=True)
+    topics = []
+    for worksheet in workbook.worksheets:
+        for row in worksheet.iter_rows(values_only=True):
+            values = [_clean_text(str(value)) for value in row if value is not None and str(value).strip()]
+            if values:
+                topic = " - ".join(values)
+                if topic not in topics:
+                    topics.append(topic[:255])
+    return {
+        "project_name": _application_name(doc.file_name),
+        "project_category": "development_and_ams",
+        "source_files": [doc.file_name],
+        "applications": [{
+            "application_name": _application_name(doc.file_name),
+            "topics": [{"topic": topic} for topic in topics[:100]],
+        }],
+        "extraction_source": "local_document_parser",
+    }
+
+
+def extract_uploaded_documents_locally(docs: List[UploadedDocument]) -> Optional[Dict[str, Any]]:
+    """Extract supported local document formats when no external adapter is configured."""
+    if not docs:
+        return None
+
+    payloads = []
+    for doc in docs:
+        suffix = Path(doc.file_name).suffix.lower()
+        if suffix == ".json":
+            payloads.append(_local_json_payload(doc))
+        elif suffix == ".docx":
+            payloads.append(_local_docx_payload(doc))
+        elif suffix == ".xlsx":
+            payloads.append(_local_xlsx_payload(doc))
+        else:
+            raise ValueError(
+                f"No local parser is available for {doc.file_name}; configure EXTERNAL_API_URL for this format."
+            )
+
+    if len(payloads) == 1:
+        return payloads[0]
+
+    applications = [application for payload in payloads for application in payload.get("applications", [])]
+    return {
+        "project_name": payloads[0].get("project_name"),
+        "project_category": payloads[0].get("project_category", "development_and_ams"),
+        "source_files": [source_file for payload in payloads for source_file in payload.get("source_files", [])],
+        "technology_stack": list(dict.fromkeys(
+            technology
+            for payload in payloads
+            for technology in payload.get("technology_stack", [])
+        )),
+        "applications": applications,
+        "extraction_source": "local_document_parser",
+    }
 
 
 class ResilientTLSAdapter(HTTPAdapter):

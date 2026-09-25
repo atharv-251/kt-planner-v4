@@ -1,17 +1,20 @@
 import shutil
-import json
 import os
 import logging
+import zipfile
 from pathlib import Path
 import requests
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from backend.database import get_db
-from backend.models.transition import Transition, UploadedDocument, RawExtraction
+from backend.models.transition import Transition, UploadedDocument, RawExtraction, ProjectProfile
 from backend.schemas.transition import UploadedDocumentResponse
-from backend.config import UPLOADS_DIR, SAMPLE_EXTRACT_PATH, EXTERNAL_API_URL, EXTERNAL_API_URL1
-from backend.services.external_extraction_service import call_external_extraction_api
+from backend.config import UPLOADS_DIR, EXTERNAL_API_URL, EXTERNAL_API_URL1
+from backend.services.external_extraction_service import (
+    call_external_extraction_api,
+    extract_uploaded_documents_locally,
+)
 
 logger = logging.getLogger("kt_planner.extraction")
 logging.basicConfig(level=logging.INFO)
@@ -56,8 +59,8 @@ def trigger_extraction(
     db: Session = Depends(get_db)
 ):
     """
-    Calls the external extraction API if configured and available,
-    or falls back to the canonical transition extract file (KT_Extract-*.json).
+    Calls the external extraction API if configured and available, otherwise
+    extracts supported uploaded document formats locally.
     """
     transition = db.query(Transition).filter(Transition.id == transition_id).first()
     if not transition:
@@ -87,15 +90,25 @@ def trigger_extraction(
             timeout_seconds=600,
         )
 
-    # Fallback to local canonical extract if external response is unavailable
+    extraction_source = "external_api"
     if not external_response:
-        if not SAMPLE_EXTRACT_PATH.exists():
-            raise HTTPException(status_code=500, detail="Sample extraction reference not found")
-        with open(SAMPLE_EXTRACT_PATH, "r", encoding="utf-8") as f:
-            external_response = json.load(f)
-        logger.warning("External API unavailable or failed; loaded fallback canonical extraction payload from workspace file.")
+        try:
+            external_response = extract_uploaded_documents_locally(docs)
+            extraction_source = "local_document_parser"
+        except (OSError, ValueError, zipfile.BadZipFile) as parse_error:
+            logger.exception("Local document extraction failed")
+            raise HTTPException(status_code=422, detail=str(parse_error)) from parse_error
+        if not external_response:
+            raise HTTPException(
+                status_code=503,
+                detail="No uploaded documents could be extracted. Configure EXTERNAL_API_URL or upload a supported file.",
+            )
 
     payload = external_response
+    total_topics = sum(
+        len(application.get("topics", []))
+        for application in payload.get("applications", [])
+    )
 
     # Update transition category if extracted
     extracted_category = payload.get("project_category", "development_and_ams")
@@ -107,15 +120,19 @@ def trigger_extraction(
         normalized_payload=payload,
     )
     db.add(raw)
+    db.query(ProjectProfile).filter(ProjectProfile.transition_id == transition_id).delete(
+        synchronize_session=False
+    )
     transition.status = "extracted"
     db.commit()
 
     return {
         "status": "success",
-        "message": "Documents extracted successfully from transition extraction API.",
+        "message": "Documents extracted successfully.",
         "project_name": payload.get("project_name"),
         "project_category": extracted_category,
-        "total_topics": len(payload.get("applications", [{}])[0].get("topics", [])),
+        "total_topics": total_topics,
+        "extraction_source": payload.get("extraction_source", extraction_source),
     }
 
 @router.get("/raw-extraction")

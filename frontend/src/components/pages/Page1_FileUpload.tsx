@@ -102,7 +102,7 @@ export const Page1_FileUpload: React.FC<Page1Props> = ({ transition, onNext, onR
                 <span>External AI Extraction Adapter</span>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Connects to the external extraction service or canonical transition parser (pre-configured with <code className="bg-sky-100 px-1 rounded text-sky-800">KT_Extract-1789932244532.json</code>).
+                Uses the configured external extraction service when available; otherwise supported uploads are parsed locally.
               </p>
               
               <div className="mt-4 bg-white p-3 rounded-lg border border-slate-200 text-xs space-y-1">
@@ -134,7 +134,7 @@ export const Page1_FileUpload: React.FC<Page1Props> = ({ transition, onNext, onR
               <FileCheck className="h-6 w-6 text-emerald-600" />
               <div>
                 <p className="text-xs font-bold text-emerald-900">{extractResult.message}</p>
-                <p className="text-xs text-emerald-700">Project: <span className="font-semibold">{extractResult.project_name}</span> | Topics: <span className="font-semibold">{extractResult.total_topics}</span></p>
+                <p className="text-xs text-emerald-700">Project: <span className="font-semibold">{extractResult.project_name}</span> | Topics: <span className="font-semibold">{extractResult.total_topics}</span> | Source: <span className="font-semibold">{extractResult.extraction_source === 'local_document_parser' ? 'Uploaded document' : 'External API'}</span></p>
               </div>
             </div>
             <button
