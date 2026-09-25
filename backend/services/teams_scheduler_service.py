@@ -25,7 +25,7 @@ def send_teams_invite(
 ) -> dict[str, str]:
     """Send one Outlook-compatible invitation for a KT Planner session."""
     uid = _invite_uid(session_id, start_at, end_at)
-    state_key = f"{uid}|{','.join(sorted(email.lower() for email in recipients))}"
+    state_key = _invite_state_key(uid, recipients)
     if state_key in _sent_invite_keys():
         return {"session_id": session_id, "status": "skipped", "message": "Invite was already sent."}
 
@@ -49,17 +49,28 @@ def send_teams_invite(
 
     port = int(_setting("KT_SCHEDULER_SMTP_PORT", "25"))
     timeout = int(_setting("KT_SCHEDULER_SMTP_TIMEOUT_SECONDS", "30"))
-    with smtplib.SMTP(server, port, timeout=timeout) as smtp:
-        if _setting("KT_SCHEDULER_SMTP_STARTTLS", "false").lower() in {"1", "true", "yes"}:
+    use_ssl = _setting("KT_SCHEDULER_SMTP_SSL", "").lower() in {"1", "true", "yes"} or port == 465
+    username = _setting("KT_SCHEDULER_SMTP_USERNAME")
+    password = _smtp_password()
+    smtp_client = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+    with smtp_client(server, port, timeout=timeout) as smtp:
+        if not use_ssl:
+            smtp.ehlo()
+        starttls_requested = _setting("KT_SCHEDULER_SMTP_STARTTLS", "false").lower() in {"1", "true", "yes"}
+        if not use_ssl and (starttls_requested or (username and password and smtp.has_extn("starttls"))):
             smtp.starttls()
-        username = _setting("KT_SCHEDULER_SMTP_USERNAME")
-        password = _smtp_password()
-        if username and password:
+            smtp.ehlo()
+        if username and password and smtp.has_extn("auth"):
             smtp.login(username, password)
         smtp.send_message(message)
 
     _record_sent_invite(state_key)
     return {"session_id": session_id, "status": "sent", "message": "Invite sent through SMTP."}
+
+
+def invite_was_sent(*, session_id: str, start_at: datetime, end_at: datetime, recipients: list[str]) -> bool:
+    uid = _invite_uid(session_id, start_at, end_at)
+    return _invite_state_key(uid, recipients) in _sent_invite_keys()
 
 
 def valid_recipients(values: Iterable[str | None]) -> list[str]:
@@ -91,6 +102,10 @@ def _smtp_password() -> str:
 def _invite_uid(session_id: str, start_at: datetime, end_at: datetime) -> str:
     fingerprint = hashlib.sha256(f"{session_id}|{start_at.isoformat()}|{end_at.isoformat()}".encode("utf-8")).hexdigest()[:20]
     return f"kt-planner-{fingerprint}@teams-kt-scheduler"
+
+
+def _invite_state_key(uid: str, recipients: list[str]) -> str:
+    return f"{uid}|{','.join(sorted(email.lower() for email in recipients))}"
 
 
 def _build_ics(*, uid: str, title: str, start_at: datetime, end_at: datetime, sender: str, recipients: list[str]) -> str:

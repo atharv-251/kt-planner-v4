@@ -39,10 +39,18 @@ export const Page13_TeamsKTScheduler: React.FC<Page13Props> = ({ transition }) =
     setMessage(null);
     setError(null);
     try {
-      const result = await api.sendTeamsInvites(transition.id, { dry_run: dryRun });
-      setMessage(dryRun
+      const result = await api.sendTeamsInvites(transition.id, { dry_run: dryRun, max_sessions: 1 });
+      const summary = dryRun
         ? `${result.dry_run_count} invitation${result.dry_run_count === 1 ? '' : 's'} generated for review.`
-        : `${result.sent} invitation${result.sent === 1 ? '' : 's'} sent; ${result.skipped} skipped; ${result.failed} failed.`);
+        : `${result.sent} invitation${result.sent === 1 ? '' : 's'} sent; ${result.skipped} skipped; ${result.failed} failed.`;
+      const failureDetails = (result.results || [])
+        .filter((item: any) => item.status === 'failed')
+        .map((item: any) => item.message)
+        .filter(Boolean)
+        .join(' | ');
+      await loadSessions();
+      if (result.failed) setError(`${summary}${failureDetails ? ` Details: ${failureDetails}` : ''}`);
+      else setMessage(summary);
     } catch (requestError: any) {
       setError(requestError.message);
     } finally {
@@ -73,7 +81,7 @@ export const Page13_TeamsKTScheduler: React.FC<Page13Props> = ({ transition }) =
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-violet-100 rounded-lg text-violet-700"><CalendarPlus className="h-5 w-5" /></div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Module 13: Teams KT Scheduler</h2>
+              <h2 className="text-lg font-bold text-slate-900">Stage 13: Teams Scheduler</h2>
               <p className="text-sm text-slate-500">Generate or send Teams-compatible calendar invitations for scheduled KT sessions.</p>
             </div>
           </div>
@@ -102,10 +110,10 @@ export const Page13_TeamsKTScheduler: React.FC<Page13Props> = ({ transition }) =
 
         <div className="overflow-x-auto border border-slate-200 rounded-xl">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-100 text-slate-700"><tr><th className="px-3 py-2.5">Session</th><th className="px-3 py-2.5">Level</th><th className="px-3 py-2.5">Schedule</th><th className="px-3 py-2.5">Recipients</th><th className="px-3 py-2.5">Status</th></tr></thead>
+            <thead className="bg-slate-100 text-slate-700"><tr><th className="px-3 py-2.5">Session</th><th className="px-3 py-2.5">Level</th><th className="px-3 py-2.5">Schedule</th><th className="px-3 py-2.5">Recipients</th><th className="px-3 py-2.5">Mail sent</th><th className="px-3 py-2.5">Status</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {sessions.map((session) => <tr key={session.id} className="hover:bg-slate-50"><td className="px-3 py-3 font-semibold text-slate-900">{session.title}</td><td className="px-3 py-3">{session.level}</td><td className="px-3 py-3 text-slate-600">{session.scheduled_date} <span className="whitespace-nowrap">{session.start_time} - {session.end_time}</span></td><td className="px-3 py-3 text-slate-600">{session.recipients.length ? <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5 text-violet-600" />{session.recipients.join(', ')}</span> : 'No email assigned'}</td><td className="px-3 py-3 capitalize">{session.status}</td></tr>)}
-              {!loading && sessions.length === 0 && <tr><td colSpan={5} className="px-3 py-10 text-center text-slate-400">No scheduled KT sessions are available. Build a schedule in Module 10 first.</td></tr>}
+              {sessions.map((session) => <tr key={session.id} className="hover:bg-slate-50"><td className="px-3 py-3 font-semibold text-slate-900">{session.title}</td><td className="px-3 py-3">{session.level}</td><td className="px-3 py-3 text-slate-600">{session.scheduled_date} <span className="whitespace-nowrap">{session.start_time} - {session.end_time}</span></td><td className="px-3 py-3 text-slate-600">{session.recipients.length ? <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5 text-violet-600" />{session.recipients.join(', ')}</span> : 'No email assigned'}</td><td className={`px-3 py-3 font-semibold ${session.mail_sent ? 'text-emerald-700' : 'text-slate-500'}`}>{session.mail_sent ? 'Sent' : 'Not sent'}</td><td className="px-3 py-3 capitalize">{session.status}</td></tr>)}
+              {!loading && sessions.length === 0 && <tr><td colSpan={6} className="px-3 py-10 text-center text-slate-400">No scheduled KT sessions are available. Build a schedule in Stage 10 first.</td></tr>}
             </tbody>
           </table>
         </div>

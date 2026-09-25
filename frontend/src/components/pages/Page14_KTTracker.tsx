@@ -119,7 +119,7 @@ function TrackerWorkspace({ transitionId }: { transitionId: string }) {
   return <div className="min-w-0 bg-white text-slate-900">
     <header className="border-b border-slate-200 px-5 py-5 sm:px-7">
       <div className="flex items-center justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase text-teal-700">Knowledge transfer</p><h2 className="mt-1 text-xl font-bold">KT Tracker</h2></div>
+        <div><p className="text-xs font-semibold uppercase text-teal-700">Stage 14: Knowledge transfer</p><h2 className="mt-1 text-xl font-bold">KT Tracker</h2></div>
         <button type="button" aria-label="Refresh tracker" title="Refresh tracker" disabled={!!busy} onClick={() => perform('Refreshing', refresh)} className="rounded-md border border-slate-200 p-2 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${busy === 'Refreshing' ? 'animate-spin' : ''}`} /></button>
       </div>
       <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-500">

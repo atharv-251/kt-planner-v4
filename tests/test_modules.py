@@ -20,8 +20,8 @@ def test_teams_scheduler_and_tracker_modules(monkeypatch):
     db.flush()
 
     node = KnowledgeNode(transition_id=transition.id, node_type="topic", name="Modules Topic")
-    sme = Stakeholder(transition_id=transition.id, name="Scheduler SME", email="sme@example.com", role="sme")
-    receiver = Stakeholder(transition_id=transition.id, name="Scheduler Receiver", email="receiver@example.com", role="receiver")
+    sme = Stakeholder(transition_id=transition.id, name="Scheduler SME", email="vivek.chaurasia@vwgds.in", role="sme")
+    receiver = Stakeholder(transition_id=transition.id, name="Scheduler Receiver", email="atharva.utekar@vwgds.in", role="receiver")
     db.add_all([node, sme, receiver])
     db.flush()
     session = KTSession(
@@ -46,7 +46,7 @@ def test_teams_scheduler_and_tracker_modules(monkeypatch):
         assert scheduler_response.status_code == 200
         scheduler_session = scheduler_response.json()["sessions"][0]
         assert scheduler_session["id"] == session.id
-        assert scheduler_session["recipients"] == ["sme@example.com", "receiver@example.com"]
+        assert scheduler_session["recipients"] == ["vivek.chaurasia@vwgds.in", "atharva.utekar@vwgds.in"]
 
         invalid_schedule = client.post(
             f"/api/v1/transitions/{transition.id}/teams-kt-scheduler/schedule",
@@ -63,10 +63,11 @@ def test_teams_scheduler_and_tracker_modules(monkeypatch):
 
         invite_response = client.post(
             f"/api/v1/transitions/{transition.id}/teams-kt-scheduler/invites",
-            json={"session_ids": [session.id], "dry_run": True},
+            json={"dry_run": True, "max_sessions": 1},
         )
         assert invite_response.status_code == 200
         assert invite_response.json()["dry_run_count"] == 1
+        assert invite_response.json()["skipped"] == 1
 
         tracker_response = client.get(f"/api/v1/transitions/{transition.id}/kt-tracker/transcripts")
         assert tracker_response.status_code == 200
